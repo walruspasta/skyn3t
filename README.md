@@ -63,9 +63,12 @@ python prime1.py
 - `!timebomb <nick>`: Plant a bomb! The target must `!cutwire <color>` before it explodes.
 - `!fatality <nick>`: Perform a Mortal Kombat style finishing move.
 - `!rd20`: Roll a 20-sided die for a random battle result.
+- `!rcupcake`: Fire the cupcake cannon at a random person.
 - `!cupcake <nick>`: Fire the cupcake cannon.
 - `!rpickpocket`: Stealthily steal a random item from someone.
+- `!pickpocket <nick>`: Stealthily steal a random item from your target.
 - `!ryomama`: Insult a random person's mother.
+- `!yomama`: Insult a user's mother.
 - `!drunkbot`: Act like a total mess.
 - `!roulette`: *Click*...
 
