@@ -70,7 +70,7 @@ NETWORKS = [
 # PERSISTENT COUNTERS
 # ============================================================
 
-COUNTER_FILE = os.path.join(os.path.dirname(__file__), "counters.json")
+COUNTER_FILE = os.path.join(os.environ.get("STATE_DIRECTORY", "."), "counters.json")
 _counter_lock = threading.Lock()
 
 def load_counters():
