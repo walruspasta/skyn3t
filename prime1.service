@@ -4,12 +4,20 @@ After=unrealircd.service anope.service
 Wants=unrealircd.service
 
 [Service]
-User=ircd
-WorkingDirectory=/home/ircd/prime1
-ExecStart=/usr/bin/python3 /home/ircd/prime1/prime1.py
+User=prime1
+Group=prime1
+WorkingDirectory=/var/lib/prime1
+ExecStart=/usr/bin/python3 /opt/prime1/prime1.py
+EnvironmentFile=/etc/prime1/prime1.env
 Restart=on-failure
 RestartSec=30
-EnvironmentFile=/etc/prime1/prime1.env
+StateDirectory=prime1
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/var/lib/prime1
+StateDirectoryMode=0750
 
 [Install]
 WantedBy=multi-user.target
