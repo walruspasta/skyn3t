@@ -1,105 +1,110 @@
-# Prime1 - sykn3t IRC Bot
+# Prime1 IRC Bot
 
-Prime1 is a rude, entertaining, and highly interactive IRC bot. It features a wide array of games, jokes, and utility commands, including integration with YouTube and Google Gemini (AI).
+Recreated from the original sykn3t Prime1 bot. Pure Python, no external dependencies.
 
-## 🚀 Getting Started
+## Setup
 
-### Prerequisites
-- Python 3.8+
-- An IRC server to connect to.
-- (Optional) Google Gemini API Key for `.gpt` command.
-- (Optional) YouTube Data API v3 Key for `.yt` and URL lookups.
-
-### Installation
-1.  Clone or copy the bot files into a directory.
-2.  Ensure the following structure exists:
-    ```
-    /project-root
-    ├── prime1.py          # Main executable
-    ├── counters.json      # (Auto-generated) Stats tracking
-    ├── data/
-    │   └── content.py     # Joke/Test/Trigger pools
-    └── logs/              # (Auto-generated) Bot logs
-    ```
-
-### Configuration
-The bot now uses a hybrid configuration model:
-
-#### 1. Environment Variables (Secrets)
-For security, do **not** put passwords or API keys in the source code. Set these in your OS environment or a `.env` file (if using a loader):
-- `NICKSERV_PASS`: Your bot's NickServ password.
-- `GEMINI_API_KEY`: Google Gemini API key.
-- `YOUTUBE_API_KEY`: YouTube Data API v3 key.
-
-#### 2. `prime1.py` Settings
-Open `prime1.py` and look for the `GLOBAL_CONFIG` and `NETWORKS` sections at the top:
-- **`GLOBAL_CONFIG`**: Set your IRC nick (the owner who can use `!reload`) and flood delays here.
-- **`NETWORKS`**: This is a list. You can add multiple server blocks to have the bot connect to multiple networks simultaneously!
-  ```python
-  NETWORKS = [
-      {
-          "server": "irc.sykn3t.net",
-          "port": 6697,
-          "use_ssl": True,
-          "nick": "Prime1",
-          "ident": "prime1",
-          "channels": ["#skyn3t"],
-          "nickserv_password": _get_env("NICKSERV_PASS"),
-      }
-  ]
-  ```
-
-### Running the Bot
-Simply run:
+### 1. Copy files to your VPS
 ```bash
-python prime1.py
+scp -r prime1/ ircd@irc.sykn3t.net:/home/ircd/prime1
 ```
 
----
+### 2. Edit configuration
+Open `prime1.py` and update the `CONFIG` block at the top:
+```python
+CONFIG = {
+    "server": "irc.sykn3t.net",
+    "port": 6697,
+    "use_ssl": True,
+    "nick": "Prime1",
+    "owner": "YourNick",    # <-- change this
+    ...
+}
+```
 
-## 🛠 Features & Commands
+### 3. Register Prime1 with NickServ
+Connect to your IRC server first, then:
+```
+/msg NickServ REGISTER Prime1 <password> <email>
+```
 
-### 🎮 Games & Fun
-- `!timebomb <nick>`: Plant a bomb! The target must `!cutwire <color>` before it explodes.
-- `!fatality <nick>`: Perform a Mortal Kombat style finishing move.
-- `!rd20`: Roll a 20-sided die for a random battle result.
-- `!rcupcake`: Fire the cupcake cannon at a random person.
-- `!cupcake <nick>`: Fire the cupcake cannon.
-- `!rpickpocket`: Stealthily steal a random item from someone.
-- `!pickpocket <nick>`: Stealthily steal a random item from your target.
-- `!ryomama`: Insult a random person's mother.
-- `!yomama`: Insult a user's mother.
-- `!drunkbot`: Act like a total mess.
-- `!roulette`: *Click*...
+Then add the NickServ identify command to prime1.py after the 001 handler:
+```python
+self.send_msg("NickServ", "IDENTIFY <password>")
+```
 
-### 🧪 Tests (Usage: `!<test> <nick>`)
-Check someone's stats! Examples:
-`!asshattest`, `!babetest`, `!cooltest`, `!drunktest`, `!idiottest`, `!sexytest`, `!noobtest`, and many more. Use `!tests` to see the full list.
+### 4. Run manually to test
+```bash
+python3 prime1.py
+```
 
-### 📚 Wisdom & Jokes
-- `!chuck`: Random Chuck Norris fact.
-- `!bofh`: Random Bastard Operator From Hell excuse.
-- `!confucius`: Ancient (and questionable) wisdom.
-- `!dumblaws`: Bizarre laws from around the world.
-- `!emo`: Deeply sad quotes.
-- `!8ball <question>`: Consult the magic ball.
+### 5. Install as a systemd service
+```bash
+sudo cp prime1.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable prime1
+sudo systemctl start prime1
+```
 
-### 🔍 Utility & AI
-- `.gpt <query>`: Ask the Gemini AI anything (Rate limited).
-- `.yt <search>`: Search YouTube for a video.
-- **URL Lookup**: Post a YouTube link, and Prime1 will automatically fetch the title and channel.
-- `!search <query>`: Get a DuckDuckGo search link.
-- `!triggerme`: Sends a private notice with all available commands.
+## Features
 
-### 👑 Admin (Owner Only)
-- `!reload`: Restarts the bot process to apply code or content changes.
+### Commands
+| Command | Description |
+|---|---|
+| `!8ball <question>` | Magic 8-ball answer |
+| `!gay <text>` | Gay opinion |
+| `!hug <nick>` | Hug someone |
+| `!pizza [nick/everyone]` | Serve pizza |
+| `!soda [nick/everyone]` | Toss a soda |
+| `!milk [nick]` | Hand out milk |
+| `!shot [nick]` | Pour a shot |
+| `!die <nick>` | Bungee murder |
+| `!chuck` | Random Chuck Norris fact |
+| `!bofh` | Random BOFH error |
+| `!confucius` | Confucius says... |
+| `!dumblaws` | Random dumb law |
+| `!emo` | Emo wisdom |
+| `!drunkbot` | Prime1 gets drunk |
+| `!rcupcake` | Random cupcake cannon |
+| `!cupcake <nick>` | Cupcake someone |
+| `!rpickpocket` | Pickpocket a random user |
+| `!ryomama` | Yo mama joke |
+| `!fatality <nick>` | Mortal Kombat finish |
+| `!triggerme` | PM list of commands |
+| `!tests` | List all % tests |
+| `!<testname> <nick>` | Run a % test |
 
----
+### % Tests
+asshattest, babetest, bitchtest, cooltest, cutetest, drunktest, emotest,
+failtest, faptest, flirttest, homotest, idiottest, jabbertest, lametest,
+leettest, meattest, noobtest, piratetest, sexytest, stonedtest, sweettest, tardtest
 
-## 🧠 Personality (Keyword Triggers)
-Prime1 listens to everything. He might react if you mention his name, call him "stupid bot", slap him, or use certain "colorful" language. He is designed to be rude—don't take it personally.
+### Keyword Triggers
+- `prime` / `prime1` — name responses
+- `stupid bot` — rude comebacks
+- `stfu` / `damn bot` / `you stfu` — STFU variants
+- `who's your daddy` — daddy responses
+- `boring` — boredom responses
+- `self destruct` — deflect
+- `fuck you prime` — attitude
+- `hi prime1` — greeting responses
+- And more...
 
-## 📁 Maintenance
-- **Logs**: Check `logs/prime1.log` for connection issues or errors.
-- **Counters**: `counters.json` tracks total stats (cupcakes fired, fatalities, etc.).
-- **Content**: You can edit `data/content.py` to add your own jokes or triggers without touching the bot's core logic.
+## Persistent Counters
+Stored in `counters.json` in the bot directory. Tracks:
+- Cupcakes given
+- Pickpocket thefts
+- Fatalities
+- Yo mama insults
+
+## Adding More Content
+All joke pools are lists at the top of `prime1.py`:
+- `CHUCK_NORRIS` — Chuck Norris facts
+- `YOMAMA` — Yo mama jokes
+- `BOFH_ERRORS` — BOFH errors
+- `DUMB_LAWS` — Dumb laws
+- `CONFUCIUS` — Confucius quotes
+- `EMO_QUOTES` — Emo wisdom
+- `PICKPOCKET_LOOT` — Pickpocket results
+
+Just add strings to any list.

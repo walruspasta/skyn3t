@@ -1,0 +1,15 @@
+[Unit]
+Description=Prime1 IRC Bot
+After=unrealircd.service anope.service
+Wants=unrealircd.service
+
+[Service]
+User=ircd
+WorkingDirectory=/home/ircd/prime1
+ExecStart=/usr/bin/python3 /home/ircd/prime1/prime1.py
+Restart=on-failure
+RestartSec=30
+EnvironmentFile=/etc/prime1/prime1.env
+
+[Install]
+WantedBy=multi-user.target

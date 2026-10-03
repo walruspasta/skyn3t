@@ -3,7 +3,7 @@
 Prime1 - sykn3t IRC Bot
 A rude, entertaining IRC bot recreated from the original.
 """
-
+import base64
 import socket
 import sys
 import ssl
@@ -26,7 +26,7 @@ from logging.handlers import RotatingFileHandler
 
 os.makedirs("logs", exist_ok=True)
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format="[%(asctime)s] [%(name)s] [%(levelname)s] %(message)s",
     datefmt="%H:%M:%S",
     handlers=[
@@ -62,6 +62,7 @@ NETWORKS = [
         "realname": "Prime1 - skyn3t Entertainment Unit",
         "channels": ["#skyn3t"],
         "nickserv_password": _get_env("NICKSERV_PASS"),
+        "sasl_account": "Prime1",
     }
 ]
 
@@ -121,6 +122,11 @@ class Prime1Bot:
         self._nick_list_building = set() # channels currently receiving 353 lists
         self.logger = logging.getLogger(f"Prime1[{self.config['server']}]")
 
+        # SASL state (reset per connection)
+        self._cap_ls = []
+        self._sasl_success = False
+        self._cap_timer = None
+
         # GPT rate limiting
         self._gpt_user_calls = {}        # nick -> [timestamp, ...] recent calls
         self._gpt_global_last = 0        # timestamp of last global call
@@ -158,8 +164,15 @@ class Prime1Bot:
                 self.sock.connect((self.config['server'], self.config['port']))
                 self.sock.settimeout(300)
 
+                self._cap_ls = []
+                self._sasl_success = False
+                self.send_raw("CAP LS 302")
                 self.send_raw(f"NICK {self.config['nick']}")
                 self.send_raw(f"USER {self.config['ident']} 0 * :{self.config['realname']}")
+                # Safety: if CAP/SASL stalls, force registration through
+                self._cap_timer = threading.Timer(15, self._cap_timeout)
+                self._cap_timer.daemon = True
+                self._cap_timer.start()
 
                 self.connected = True
                 self.last_data_received = time.time()
@@ -230,6 +243,61 @@ class Prime1Bot:
                 self.last_response = now
                 return True
             return False
+
+# ----------------------------------------------------------
+    # SASL
+    # ----------------------------------------------------------
+
+    def _cap_timeout(self):
+        """If CAP negotiation stalls, end it so registration can complete."""
+        if not self.connected:
+            return
+        self.logger.warning("CAP negotiation timed out — ending CAP.")
+        self.send_raw("CAP END")
+
+    def _cap_end(self):
+        if self._cap_timer:
+            self._cap_timer.cancel()
+            self._cap_timer = None
+        self.send_raw("CAP END")
+
+    def handle_cap(self, parts):
+        if len(parts) < 4:
+            return
+        sub, _, payload = parts[3].partition(" ")
+        sub = sub.upper()
+
+        if sub == "LS":
+            more = False
+            if payload.startswith("* "):
+                more = True
+                payload = payload[2:]
+            payload = payload.lstrip(":")
+            self._cap_ls += payload.split()
+            if more:
+                return
+            caps = [c.split("=")[0].lower() for c in self._cap_ls]
+            if "sasl" in caps and self.config.get("nickserv_password"):
+                self.send_raw("CAP REQ :sasl")
+            else:
+                self.logger.info("SASL unavailable — falling back to NickServ.")
+                self._cap_end()
+
+        elif sub == "ACK":
+            if "sasl" in payload.lower():
+                self.send_raw("AUTHENTICATE PLAIN")
+            else:
+                self._cap_end()
+
+        elif sub == "NAK":
+            self.logger.warning("SASL request rejected by server.")
+            self._cap_end()
+
+    def send_sasl_auth(self):
+        account = self.config.get("sasl_account") or self.config["nick"]
+        password = self.config.get("nickserv_password", "")
+        raw = f"\0{account}\0{password}".encode("utf-8")
+        self.send_raw(f"AUTHENTICATE {base64.b64encode(raw).decode()}")
 
     # ----------------------------------------------------------
     # CHANNEL NICK TRACKING
@@ -384,18 +452,29 @@ class Prime1Bot:
         with _counter_lock:
             self.send_msg(channel, f"Number of people cupcaked: {counters['cupcakes']}")
 
-    def handle_rpickpocket(self, channel, nick, args):
+    def handle_pickpocket(self, channel, nick, target):
+        if not target:
+            self.send_msg(channel, f"{nick}: Who are you robbing? !pickpocket <nick>")
+            return
         threading.Thread(
             target=self._rpickpocket_worker,
-            args=(channel, nick),
+            args=(channel, nick, target),
             daemon=True
         ).start()
 
-    def _rpickpocket_worker(self, channel, nick):
+    def handle_rpickpocket(self, channel, nick, args):
+        threading.Thread(
+            target=self._rpickpocket_worker,
+            args=(channel, nick, None),
+            daemon=True
+        ).start()
+
+    def _rpickpocket_worker(self, channel, nick, target=None):
         with _counter_lock:
             counters["thefts"] += 1
             save_counters(counters)
-        target = self.random_nick(channel, exclude=nick)
+        if not target:
+            target = self.random_nick(channel, exclude=nick)
         loot = random.choice(PICKPOCKET_LOOT).replace("{year}", str(datetime.now().year))
         self.send_action(channel, f"goes into ninja mode and sneaks up behind {target}")
         time.sleep(0.8)
@@ -404,6 +483,17 @@ class Prime1Bot:
         self.send_msg(channel, loot)
         with _counter_lock:
             self.send_msg(channel, f"Random thefts committed to date: {counters['thefts']}")
+
+    def handle_yomama(self, channel, nick, target):
+        if not target:
+            self.send_msg(channel, f"{nick}: Who's mama are we insulting? !yomama <nick>")
+            return
+        with _counter_lock:
+            counters["yomamas"] += 1
+            save_counters(counters)
+        self.send_msg(channel, f"{target}: {random.choice(YOMAMA)}")
+        with _counter_lock:
+            self.send_msg(channel, f"Random peoples' mamas insulted since yomama: {counters['yomamas']}")
 
     def handle_ryomama(self, channel, nick, args):
         with _counter_lock:
@@ -477,6 +567,27 @@ class Prime1Bot:
             self.send_action(channel, f"tosses a cold beer to {nick}, no worries it's on {target}")
         else:
             self.send_action(channel, f"tosses a cold beer to {target}.")
+
+    def handle_slap(self, channel, nick, target):
+        if not target:
+            target = self.random_nick(channel, exclude=nick)
+            self.send_action(channel, f"slaps {nick} around a bit with a large trout, courtesy of {target}")
+        else:
+            self.send_action(channel, f"slaps {target} around a bit with a large trout")
+
+    def handle_wine(self, channel, nick, target):
+        if not target:
+            target = self.random_nick(channel, exclude=nick)
+            self.send_action(channel, f"passes a glass of wine to {nick}, no worries it's on {target}")
+        else:
+            self.send_action(channel, f"passes a glass of wine to {target}.")
+
+    def handle_frog(self, channel, nick, target):
+        if not target:
+            target = self.random_nick(channel, exclude=nick)
+            self.send_action(channel, f"tosses a frog to {nick}, no worries it's on {target}")
+        else:
+            self.send_action(channel, f"tosses a frog to {target}.")
 
     def handle_roulette(self, channel, nick, target):
         self.send_msg(channel, "*CLICK*")
@@ -690,7 +801,7 @@ class Prime1Bot:
             return
         url = (
             f"https://generativelanguage.googleapis.com/v1beta/models/"
-            f"gemini-2.5-flash:generateContent?key={key}"
+            f"gemini-flash-latest:generateContent"
         )
         prompt = (
             f"Answer this question in 1-2 complete sentences. "
@@ -710,12 +821,12 @@ class Prime1Bot:
             req = urllib.request.Request(
                 url,
                 data=payload,
-                headers={"Content-Type": "application/json", "User-Agent": "Prime1-IRC-Bot/1.0"},
+                headers={"Content-Type": "application/json", "User-Agent": "Prime1-IRC-Bot/1.0", "x-goog-api-key": key},
                 method="POST"
             )
             with urllib.request.urlopen(req, timeout=10) as resp:
                 data = json.loads(resp.read().decode())
-            text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+            text = "".join(p.get("text", "") for p in data["candidates"][0]["content"]["parts"] if not p.get("thought")).strip()
             text = " ".join(text.split())
             if len(text) > 450:
                 truncated = text[:450]
@@ -743,8 +854,8 @@ class Prime1Bot:
             "!soda [nick/everyone], !milk [nick], !shot [nick], !die <nick>, !beer [nick], "
             "!chuck, !bofh, !confucius, !dumblaws, !emo, !drunkbot, !weed, !condom, "
             "!roulette, !rd20, !search <term>, !timebomb <nick>, !cutwire <color>, "
-            "!rcupcake, !cupcake <nick>, !rpickpocket, !ryomama, "
-            "!fatality <nick>, !rfatality, !tests, .yt <search>, .gpt <question>"
+            "!rcupcake, !cupcake <nick>, !pickpocket <nick>, !rpickpocket, !yomama <nick>, !ryomama, "
+            "!fatality <nick>, !rfatality, !tests, .yt <search>, .gpt <question>, !wine [nick], !slap [nick]"
         )
         self.send_notice(nick, f"Prime1's commands: {commands}")
         self.send_notice(nick, "Keyword triggers: prime1, hey right nut, hey left nut, stupid bot, stfu, who's your daddy, slap, and more. Just talk, I'm listening.")
@@ -789,17 +900,21 @@ class Prime1Bot:
         "!emo":          (handle_emo,        "args"),
         "!drunkbot":     (handle_drunkbot,   "args"),
         "!beer":         (handle_beer,       "target"),
+        "!frog":         (handle_frog,       "target"),
         "!roulette":     (handle_roulette,   "target"),
         "!weed":         (handle_weed,       "args"),
         "!condom":       (handle_condom,     "args"),
         "!rd20":         (handle_rd20,       "args"),
         "!search":       (handle_search,     "args"),
+        "!slap":         (handle_slap,       "target"),
         "!timebomb":     (handle_timebomb,   "target"),
         "!cutwire":      (handle_cutwire,    "args"),
         "!rfatality":    (handle_rfatality,  "args"),
         "!rcupcake":     (handle_rcupcake,   "args"),
         "!cupcake":      (handle_cupcake,    "target"),
-        "!rpickpocket":  (handle_rpickpocket,"args"),
+        "!pickpocket":   (handle_pickpocket,  "target"),
+        "!rpickpocket":  (handle_rpickpocket, "args"),
+        "!yomama":       (handle_yomama,     "target"),
         "!ryomama":      (handle_ryomama,    "args"),
         "!fatality":     (handle_fatality,   "target"),
         "!triggerme":    (handle_triggerme,  "args"),
@@ -808,6 +923,7 @@ class Prime1Bot:
         "!prime":        (None,              "special"),
         ".yt":           (handle_yt,         "args"),
         ".gpt":          (handle_gpt,        "args"),
+        "!wine":         (handle_wine,        "args"),
     }
 
     def dispatch_command(self, channel, nick, cmd, args):
@@ -909,6 +1025,10 @@ class Prime1Bot:
             self.send_raw("PONG " + line[5:])
             return
 
+        if line.startswith("AUTHENTICATE"):
+            self.send_sasl_auth()
+            return
+        
         parts = line.split(" ", 3)
         if len(parts) < 2:
             return
@@ -922,7 +1042,7 @@ class Prime1Bot:
 
         # Nick list for channel
         elif command == "353":
-            channel = parts[3].split()[0].lstrip("=@").lower()
+            channel = parts[3].split()[1].lower()
             nicks_raw = parts[3].split(":", 1)[1].split()
             nicks = [n.lstrip("@+%&~") for n in nicks_raw]
             if channel not in self._nick_list_building:
@@ -975,10 +1095,34 @@ class Prime1Bot:
             message = parts[3].lstrip(":") if len(parts) > 3 else ""
             self.handle_privmsg(sender_nick, target, message)
 
+        elif command == "CAP":
+            self.handle_cap(parts)
+
+        elif command == "903":
+            self.logger.info("SASL authentication successful.")
+            self._sasl_success = True
+            self._cap_end()
+
+        elif command in ("902", "904", "905", "906"):
+            self.logger.warning(f"SASL failed ({command}) — falling back to NickServ.")
+            self._cap_end()
+
+        elif command == "433":
+            self.logger.warning("Nick in use — trying alternate and releasing.")
+            self.send_raw(f"NICK {self.config['nick']}_")
+            self.send_msg("NickServ", f"RELEASE {self.config['nick']}")
+            threading.Timer(3, self.send_raw,
+                            args=(f"NICK {self.config['nick']}",)).start()
+
     def on_connect(self):
         """Called when bot is successfully connected and registered."""
         self.logger.info("Registration complete.")
-        self.send_msg("NickServ", f"IDENTIFY {self.config['nickserv_password']}")
+        if self._cap_timer:
+            self._cap_timer.cancel()
+            self._cap_timer = None
+        if not self._sasl_success:
+            self.send_msg("NickServ", f"IDENTIFY {self.config['nickserv_password']}")
+        self.send_msg("NickServ", "SET AUTOOP ON")
         for ch in self.config["channels"]:
             self.send_raw(f"JOIN {ch}")
 

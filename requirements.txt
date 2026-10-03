@@ -1,0 +1,3 @@
+# Prime1 IRC Bot
+# No external dependencies required - uses Python standard library only
+# Python 3.8+ recommended

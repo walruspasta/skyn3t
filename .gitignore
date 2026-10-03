@@ -1,0 +1,8 @@
+*.bak
+__pycache__/
+*.pyc
+.env
+Archive/
+prime1_pre_sasl.py
+counters.json
+logs/
